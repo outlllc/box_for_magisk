@@ -45,21 +45,21 @@ fi
 ui_print "- Installing Box for Magisk/KernelSU/APatch"
 unzip -o "$ZIPFILE" -x 'META-INF/*' -x 'webroot/*' -d "$MODPATH" >&2
 
-if [ -d "/data/adb/box" ]; then
+if [ -d "/data/adb/boxroot" ]; then
   ui_print "- Backup box"
-  temp_bak=$(mktemp -d "/data/adb/box/box.XXXXXXXXXX")
+  temp_bak=$(mktemp -d "/data/adb/boxroot/box.XXXXXXXXXX")
   temp_dir="${temp_bak}"
-  mv /data/adb/box/* "${temp_dir}/"
-  mv "$MODPATH/box/"* /data/adb/box/
+  mv /data/adb/boxroot/* "${temp_dir}/"
+  mv "$MODPATH/boxroot/"* /data/adb/boxroot/
   backup_box="true"
 else
   mv "$MODPATH/box" /data/adb/
 fi
 
 ui_print "- Create directories"
-mkdir -p /data/adb/box/
-mkdir -p /data/adb/box/run/
-mkdir -p /data/adb/box/bin/xclash/
+mkdir -p /data/adb/boxroot/
+mkdir -p /data/adb/boxroot/run/
+mkdir -p /data/adb/boxroot/bin/xclash/
 
 ui_print "- Extract the files uninstall.sh and box_service.sh into the $MODPATH folder and ${service_dir}"
 unzip -j -o "$ZIPFILE" 'uninstall.sh' -d "$MODPATH" >&2
@@ -67,16 +67,16 @@ unzip -j -o "$ZIPFILE" 'box_service.sh' -d "${service_dir}" >&2
 
 ui_print "- Setting permissions"
 set_perm_recursive $MODPATH 0 0 0755 0644
-set_perm_recursive /data/adb/box/ 0 3005 0755 0644
-set_perm_recursive /data/adb/box/scripts/  0 3005 0755 0700
+set_perm_recursive /data/adb/boxroot/ 0 3005 0755 0644
+set_perm_recursive /data/adb/boxroot/scripts/  0 3005 0755 0700
 set_perm ${service_dir}/box_service.sh  0  0  0755
 set_perm $MODPATH/uninstall.sh  0  0  0755
-set_perm /data/adb/box/scripts/  0  0  0755
+set_perm /data/adb/boxroot/scripts/  0  0  0755
 
 # fix "set_perm_recursive /data/adb/box/scripts" not working on some phones.
 chmod ugo+x ${service_dir}/box_service.sh
 chmod ugo+x $MODPATH/uninstall.sh
-chmod ugo+x /data/adb/box/scripts/*
+chmod ugo+x /data/adb/boxroot/scripts/*
 
 ui_print "-----------------------------------------------------------"
 ui_print "- Do you want to download Kernel(xray hysteria clash v2fly sing-box) and GeoX(geosite geoip mmdb)? size: ±100MB."
@@ -94,7 +94,7 @@ while true ; do
   else
     if $(cat $TMPDIR/events | grep -q KEY_VOLUMEUP) ; then
       ui_print "- It will take a while...."
-      /data/adb/box/scripts/box.tool all
+      /data/adb/boxroot/scripts/box.tool all
       break
     elif $(cat $TMPDIR/events | grep -q KEY_VOLUMEDOWN) ; then
       ui_print "- Skip download Kernel and Geox"
@@ -108,7 +108,7 @@ if [ "${backup_box}" = "true" ]; then
   restore_config() {
     config_dir="$1"
     if [ -d "${temp_dir}/${config_dir}" ]; then
-      cp -rf "${temp_dir}/${config_dir}/"* "/data/adb/box/${config_dir}/"
+      cp -rf "${temp_dir}/${config_dir}/"* "/data/adb/boxroot/${config_dir}/"
     fi
   }
 
@@ -120,9 +120,9 @@ if [ "${backup_box}" = "true" ]; then
 
   restore_kernel() {
     kernel_name="$1"
-    if [ ! -f "/data/adb/box/bin/$kernel_name" ] && [ -f "${temp_dir}/bin/${kernel_name}" ]; then
+    if [ ! -f "/data/adb/boxroot/bin/$kernel_name" ] && [ -f "${temp_dir}/bin/${kernel_name}" ]; then
       ui_print "- Restore ${kernel_name} kernel"
-      cp -rf "${temp_dir}/bin/${kernel_name}" "/data/adb/box/bin/${kernel_name}"
+      cp -rf "${temp_dir}/bin/${kernel_name}" "/data/adb/boxroot/bin/${kernel_name}"
     fi
   }
 
@@ -136,10 +136,10 @@ if [ "${backup_box}" = "true" ]; then
   restore_kernel "xclash/premium"
 
   ui_print "- Restore logs, pid and uid.list"
-  cp "${temp_dir}/run/"* "/data/adb/box/run/"
+  cp "${temp_dir}/run/"* "/data/adb/boxroot/run/"
 fi
 
-if [ -z "$(find /data/adb/box/bin -type f)" ]; then
+if [ -z "$(find /data/adb/boxroot/bin -type f)" ]; then
   sed -Ei 's/^description=(\[.*][[:space:]]*)?/description=[ 😱 Module installed but you need to download Kernel(xray hysteria clash v2fly sing-box) and GeoX(geosite geoip mmdb) manually ] /g' $MODPATH/module.prop
 fi
 
@@ -154,8 +154,8 @@ else
 fi
 
 ui_print "- Delete leftover files"
-rm -rf /data/adb/box/bin/.bin
-rm -rf $MODPATH/box
+rm -rf /data/adb/boxroot/bin/.bin
+rm -rf $MODPATH/boxroot
 rm -f $MODPATH/box_service.sh
 
 ui_print "- Installation is complete, reboot your device"

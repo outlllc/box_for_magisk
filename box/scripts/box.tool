@@ -1,7 +1,7 @@
 #!/system/bin/sh
 
 scripts_dir="${0%/*}"
-source /data/adb/box/settings.ini
+source /data/adb/boxroot/settings.ini
 
 # user agent
 user_agent="box_for_root"
@@ -62,7 +62,7 @@ restart_box() {
 
 # Check Configuration
 check() {
-  # su -c /data/adb/box/scripts/box.tool rconf
+  # su -c /data/adb/boxroot/scripts/box.tool rconf
   case "${bin_name}" in
     sing-box)
       if ${bin_path} check -D "${box_dir}/${bin_name}" --config-directory "${box_dir}/sing-box" > "${box_run}/${bin_name}_report.log" 2>&1; then
@@ -216,7 +216,7 @@ upyq() {
 
 # Check and update geoip and geosite
 upgeox() {
-  # su -c /data/adb/box/scripts/box.tool geox
+  # su -c /data/adb/boxroot/scripts/box.tool geox
   geodata_mode=$(busybox awk '!/^ *#/ && /geodata-mode:*./{print $2}' "${clash_config}")
   [ -z "${geodata_mode}" ] && geodata_mode=false
   case "${bin_name}" in
@@ -330,7 +330,7 @@ upsubs() {
 }
 
 upkernel() {
-  # su -c /data/adb/box/scripts/box.tool upkernel
+  # su -c /data/adb/boxroot/scripts/box.tool upkernel
   mkdir -p "${bin_dir}/backup"
   if [ -f "${bin_dir}/${bin_name}" ]; then
     cp "${bin_dir}/${bin_name}" "${bin_dir}/backup/${bin_name}.bak" >/dev/null 2>&1
@@ -466,7 +466,7 @@ xkernel() {
       if ${tar_command} -xf "${box_dir}/${file_kernel}.tar.gz" -C "${bin_dir}" >&2; then
         mv "${bin_dir}/sing-box-${latest_version#v}-${platform}-${arch}/sing-box" "${bin_dir}/${bin_name}"
         if [ -f "${box_pid}" ]; then
-          rm -rf /data/adb/box/sing-box/cache.db
+          rm -rf /data/adb/boxroot/sing-box/cache.db
           restart_box
         else
           log Debug "${bin_name} does not need to be restarted."
@@ -523,7 +523,7 @@ xkernel() {
 
 # Check and update yacd
 upxui() {
-  # su -c /data/adb/box/scripts/box.tool upxui
+  # su -c /data/adb/boxroot/scripts/box.tool upxui
   xdashboard="${bin_name}/dashboard"
   if [[ "${bin_name}" == @(clash|sing-box) ]]; then
     file_dashboard="${box_dir}/${xdashboard}.zip"
@@ -669,7 +669,7 @@ cgroup_cpuset() {
   return 0
 }
 
-ip_port=$(if [ "${bin_name}" = "clash" ]; then busybox awk '/external-controller:/ {print $2}' "${clash_config}"; else find /data/adb/box/sing-box/ -type f -name 'config.json' -exec busybox awk -F'[:,]' '/external_controller/ {print $2":"$3}' {} \; | sed 's/^[ \t]*//;s/"//g'; fi;)
+ip_port=$(if [ "${bin_name}" = "clash" ]; then busybox awk '/external-controller:/ {print $2}' "${clash_config}"; else find /data/adb/boxroot/sing-box/ -type f -name 'config.json' -exec busybox awk -F'[:,]' '/external_controller/ {print $2":"$3}' {} \; | sed 's/^[ \t]*//;s/"//g'; fi;)
 secret=""
 
 webroot() {

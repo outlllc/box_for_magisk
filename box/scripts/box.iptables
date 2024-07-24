@@ -1,7 +1,7 @@
 #!/system/bin/sh
 
 scripts_dir="${0%/*}"
-source /data/adb/box/settings.ini
+source /data/adb/boxroot/settings.ini
 
 fwmark="16777216/16777216"
 table="2024"

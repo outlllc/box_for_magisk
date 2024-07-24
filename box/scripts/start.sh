@@ -1,7 +1,7 @@
 #!/system/bin/sh
 
 scripts_dir="${0%/*}"
-file_settings="/data/adb/box/settings.ini"
+file_settings="/data/adb/boxroot/settings.ini"
 
 moddir="/data/adb/modules/box_for_root"
 
@@ -21,7 +21,7 @@ else
 fi
 
 refresh_box() {
-  if [ -f "/data/adb/box/run/box.pid" ]; then
+  if [ -f "/data/adb/boxroot/run/box.pid" ]; then
     "${scripts_dir}/box.service" stop >> "/dev/null" 2>&1
     "${scripts_dir}/box.iptables" disable >> "/dev/null" 2>&1
   fi
@@ -57,8 +57,8 @@ start_inotifyd() {
   inotifyd "${scripts_dir}/box.inotify" "${moddir}" >> "/dev/null" 2>&1 &
 }
 
-mkdir -p /data/adb/box/run/
-if [ -f "/data/adb/box/manual" ]; then
+mkdir -p /data/adb/boxroot/run/
+if [ -f "/data/adb/boxroot/manual" ]; then
   exit 1
 fi
 
