@@ -53,7 +53,7 @@ if [ -d "/data/adb/boxroot" ]; then
   mv "$MODPATH/boxroot/"* /data/adb/boxroot/
   backup_box="true"
 else
-  mv "$MODPATH/box" /data/adb/
+  mv "$MODPATH/boxroot" /data/adb/
 fi
 
 ui_print "- Create directories"
