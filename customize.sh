@@ -40,33 +40,34 @@ fi
 # Extract files and configure directories
 ui_print "- Installing Box for Magisk/KernelSU/APatch"
 unzip -o "$ZIPFILE" -x 'META-INF/*' -x 'webroot/*' -d "$MODPATH" >&2
-if [ -d "/data/adb/box" ]; then
+
+if [ -d "/data/adb/boxroot" ]; then
   ui_print "- Backup existing box data"
-  temp_bak=$(mktemp -d "/data/adb/box/box.XXXXXXXXXX")
+  temp_bak=$(mktemp -d "/data/adb/boxroot/box.XXXXXXXXXX")
   temp_dir="${temp_bak}"
-  mv /data/adb/box/* "${temp_dir}/"
-  mv "$MODPATH/box/"* /data/adb/box/
+  mv /data/adb/boxroot/* "${temp_dir}/"
+  mv "$MODPATH/boxroot/"* /data/adb/boxroot/
   backup_box="true"
 else
-  mv "$MODPATH/box" /data/adb/
+  mv "$MODPATH/boxroot" /data/adb/
 fi
 
 # Directory creation and file extraction
 ui_print "- Create directories"
-mkdir -p /data/adb/box/ /data/adb/box/run/ /data/adb/box/bin/xclash/
-ui_print "- Extracting uninstall.sh skip_mount and box_service.sh"
+mkdir -p /data/adb/boxroot/ /data/adb/boxroot/run/ /data/adb/boxroot/bin/xclash/
+ui_print "- Extracting uninstall.sh skip_mount and box_root_service.sh"
 unzip -j -o "$ZIPFILE" 'uninstall.sh' -d "$MODPATH" >&2
 unzip -j -o "$ZIPFILE" 'skip_mount' -d "$MODPATH" >&2
-unzip -j -o "$ZIPFILE" 'box_service.sh' -d "${service_dir}" >&2
+unzip -j -o "$ZIPFILE" 'box_root_service.sh' -d "${service_dir}" >&2
 
 # Set permissions
 ui_print "- Setting permissions"
 set_perm_recursive $MODPATH 0 0 0755 0644
-set_perm_recursive /data/adb/box/ 0 3005 0755 0644
-set_perm_recursive /data/adb/box/scripts/ 0 3005 0755 0700
-set_perm ${service_dir}/box_service.sh 0 0 0755
+set_perm_recursive /data/adb/boxroot/ 0 3005 0755 0644
+set_perm_recursive /data/adb/boxroot/scripts/ 0 3005 0755 0700
+set_perm ${service_dir}/box_root_service.sh 0 0 0755
 set_perm $MODPATH/uninstall.sh 0 0 0755
-chmod ugo+x ${service_dir}/box_service.sh $MODPATH/uninstall.sh /data/adb/box/scripts/*
+chmod ugo+x ${service_dir}/box_root_service.sh $MODPATH/uninstall.sh /data/adb/boxroot/scripts/*
 
 # Download prompt for optional kernel components
 ui_print "-----------------------------------------------------------"
@@ -84,7 +85,7 @@ while true ; do
     break
   elif $(cat $TMPDIR/events | grep -q KEY_VOLUMEUP); then
     ui_print "- Starting download..."
-    /data/adb/box/scripts/box.tool all
+    /data/adb/boxroot/scripts/box.tool all
     break
   elif $(cat $TMPDIR/events | grep -q KEY_VOLUMEDOWN); then
     ui_print "- Skipping download."
@@ -97,7 +98,7 @@ if [ "${backup_box}" = "true" ]; then
   ui_print "- Restoring configurations (xray, hysteria, clash, sing-box, v2fly)"
   restore_config() {
     config_dir="$1"
-    [ -d "${temp_dir}/${config_dir}" ] && cp -rf "${temp_dir}/${config_dir}/"* "/data/adb/box/${config_dir}/"
+    [ -d "${temp_dir}/${config_dir}" ] && cp -rf "${temp_dir}/${config_dir}/"* "/data/adb/boxroot/${config_dir}/"
   }
   for dir in clash xray v2fly sing-box hysteria; do
     restore_config "$dir"
@@ -105,14 +106,14 @@ if [ "${backup_box}" = "true" ]; then
 
   restore_kernel() {
     kernel_name="$1"
-    [ ! -f "/data/adb/box/bin/$kernel_name" ] && [ -f "${temp_dir}/bin/${kernel_name}" ] && cp -rf "${temp_dir}/bin/${kernel_name}" "/data/adb/box/bin/${kernel_name}"
+    [ ! -f "/data/adb/boxroot/bin/$kernel_name" ] && [ -f "${temp_dir}/bin/${kernel_name}" ] && cp -rf "${temp_dir}/bin/${kernel_name}" "/data/adb/boxroot/bin/${kernel_name}"
   }
   for kernel in curl yq xray sing-box v2fly hysteria xclash/mihomo xclash/premium; do
     restore_kernel "$kernel"
   done
 
   ui_print "- Restoring logs, pid, and uid.list"
-  cp "${temp_dir}/run/"* "/data/adb/box/run/"
+  cp "${temp_dir}/run/"* "/data/adb/boxroot/run/"
 fi
 
 # create_resolv() {
@@ -132,21 +133,21 @@ fi
 # create_resolv
 
 # Update module description if no kernel binaries are found
-[ -z "$(find /data/adb/box/bin -type f)" ] && sed -Ei 's/^description=(\[.*][[:space:]]*)?/description=[ 😱 Module installed but manual Kernel download required ] /g' $MODPATH/module.prop
+[ -z "$(find /data/adb/boxroot/bin -type f)" ] && sed -Ei 's/^description=(\[.*][[:space:]]*)?/description=[ 😱 Module installed but manual Kernel download required ] /g' $MODPATH/module.prop
 
 # Customize module name based on environment
 if [ "$KSU" = "true" ]; then
-  sed -i "s/name=.*/name=Box for KernelSU/g" $MODPATH/module.prop
+  sed -i "s/name=.*/name=Box for Root/g" $MODPATH/module.prop
 elif [ "$APATCH" = "true" ]; then
-  sed -i "s/name=.*/name=Box for APatch/g" $MODPATH/module.prop
+  sed -i "s/name=.*/name=Box for Root/g" $MODPATH/module.prop
 else
-  sed -i "s/name=.*/name=Box for Magisk/g" $MODPATH/module.prop
+  sed -i "s/name=.*/name=Box for Root/g" $MODPATH/module.prop
 fi
 unzip -o "$ZIPFILE" 'webroot/*' -d "$MODPATH" >&2
 
 # Clean up temporary files
 ui_print "- Cleaning up leftover files"
-rm -rf /data/adb/box/bin/.bin $MODPATH/box $MODPATH/box_service.sh
+rm -rf /data/adb/boxroot/bin/.bin $MODPATH/boxroot $MODPATH/box_root_service.sh
 
 # Complete installation
 ui_print "- Installation complete. Please reboot your device."

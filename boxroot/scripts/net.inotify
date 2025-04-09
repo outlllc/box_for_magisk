@@ -18,7 +18,7 @@ fi
 
 iptables="${IPV}"
 ip6tables="${IP6V}"
-logs="/data/adb/box/run"
+logs="/data/adb/boxroot/run"
 
 rules_add() {
   date > "${logs}/net.log"
@@ -39,7 +39,7 @@ rules_add() {
 }
 
 if [ "$events" = "w" ]; then
-  if [ -f "/data/adb/box/run/box.pid" ]; then
+  if [ -f "/data/adb/boxroot/run/box.pid" ]; then
     rules_add
   fi
 fi

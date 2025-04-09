@@ -1,9 +1,9 @@
 #!/system/bin/sh
 
 scripts_dir="${0%/*}"
-source /data/adb/box/settings.ini
+source /data/adb/boxroot/settings.ini
 
-PROPFILE="/data/adb/modules/box_for_root/module.prop"
+PROPFILE="/data/adb/modules/box_root/module.prop"
 
 box_check_logs() {
   # Delete logs for each bin in the list
@@ -107,7 +107,7 @@ box_permission() {
     fi
     log Error "Kernel [ ${bin_name} ] is missing."
     log Error "Please download the [ ${bin_name} ] kernel and place it in the ${bin_dir}/ directory."
-    log Debug "exec 'su -c /data/adb/box/scripts/box.tool upkernel' in terminal"
+    log Debug "exec 'su -c /data/adb/boxroot/scripts/box.tool upkernel' in terminal"
     exit 1
   fi
 }
@@ -174,10 +174,25 @@ prepare_singbox() {
   ${yq} '(.inbounds[] | select(.type == "tun") | .auto_route) |= true' -i --output-format=json "${sing_config}"
 
   # Format sing-box configuration
-  if ${bin_path} format -w -D "${box_dir}/${bin_name}" -C "${box_dir}/${bin_name}" > "${box_run}/${bin_name}.log" 2>&1; then
-    # Set auto_route based on network_mode
+##  if ${bin_path} format -w -D "${box_dir}/${bin_name}" -C "${box_dir}/${bin_name}" > "${box_run}/${bin_name}.log" 2>&1; then
+  ##do not format the config
+  if [ -f "${sing_config}" ]; then
+    log Info "______no format______"  
+	# Set auto_route based on network_mode
     if [[ "${network_mode}" == @(mixed|tun) ]]; then
       # Check if "type" is "tun" in configuration
+      
+      if ! busybox grep -q '"type": "mixed"' "${sing_config}"; then
+        # Add "mixed" configuration if missing
+        ${yq} '.inbounds += [{
+          "type": "mixed",
+          "tag": "mixed",
+          "listen": "::",
+          "listen_port": 7890,
+          "set_system_proxy": false
+        }]' -i --output-format=json "${sing_config}"
+        log Debug "[mixed] configuration added to ${sing_config}"
+      fi
       if ! busybox grep -q '"type": "tun"' "${sing_config}"; then
         # Add "tun" configuration if missing
         ${yq} '.inbounds += [{
@@ -190,9 +205,13 @@ prepare_singbox() {
           "auto_route": true,
           "strict_route": true,
           "auto_redirect": true,
-          "sniff": true,
-          "sniff_override_destination": false,
-          "include_android_user": [0,10],
+          "platform": {
+            "http_proxy": {
+              "enabled": true,
+              "server": "127.0.0.1",
+              "server_port": 7890
+            }
+          },
           "include_package": [],
           "exclude_package": []
         }]' -i --output-format=json "${sing_config}"
@@ -205,16 +224,31 @@ prepare_singbox() {
       sed -i 's/"auto_detect_interface": true/"auto_detect_interface": false/g' "${box_dir}/sing-box/"*.json
 
       # Check if "type" is "tproxy" in configuration
-      if ! busybox grep -q '"type": "tproxy"' "${sing_config}"; then
+      if ! busybox grep -q '"type": "tproxy"' "${sing_config}"; then     
+        if ! busybox grep -q '"type": "mixed"' "${sing_config}"; then
+          ${yq} '.inbounds += [{
+            "type": "mixed",
+            "tag": "mixed",
+            listen": "::",
+            "listen_port": 7890,
+            "set_system_proxy": false
+          }]' -i --output-format=json "${sing_config}"
+          log Debug "[mixed] configuration added to ${sing_config}"
+        fi
         # Add "tproxy" configuration if missing
         ${yq} '.inbounds += [{
           "type": "tproxy",
           "tag": "tproxy-in",
           "listen": "::",
-          "listen_port": '"${tproxy_port}"',
-          "sniff": true,
-          "sniff_override_destination": false
-        }]' -i --output-format=json "${sing_config}"
+          "listen_port": '"${tproxy_port}"'
+        },
+		{
+          "type": "mixed",
+          "tag": "mixed",
+          "listen": "::",
+          "listen_port": 7080,
+          "set_system_proxy": false
+    }]' -i --output-format=json "${sing_config}"
         log Debug "[Tproxy] configuration added to ${sing_config}"
       fi
 
@@ -245,9 +279,7 @@ prepare_singbox() {
           "type": "redirect",
           "tag": "redirect-in",
           "listen": "::",
-          "listen_port": '"${redir_port}"',
-          "sniff": true,
-          "sniff_override_destination": false
+          "listen_port": '"${redir_port}"'
         }]' -i --output-format=json "${sing_config}"
         log Debug "[Redirect] configuration added to ${sing_config}"
       fi
@@ -399,8 +431,8 @@ box_run_bin() {
       ;;
     sing-box)
       prepare_singbox
-      if ${bin_path} check -D "${box_dir}/${bin_name}" -C "${box_dir}/${bin_name}" > "${box_run}/${bin_name}.log" 2>&1; then
-        nohup busybox setuidgid "${box_user_group}" "${bin_path}" run -D "${box_dir}/${bin_name}" -C "${box_dir}/${bin_name}" > "${bin_log}" 2>&1 &
+      if ${bin_path} check -D "${box_dir}/${bin_name}" > "${box_run}/${bin_name}.log" 2>&1; then
+        nohup busybox setuidgid "${box_user_group}" "${bin_path}" run -D "${box_dir}/${bin_name}" > "${bin_log}" 2>&1 &
         PID=$!
         echo -n $PID > "${box_pid}"
         sleep 1
@@ -584,6 +616,12 @@ box_bin_status() {
   else
     log Info "${bin_name} running time: not available."
   fi
+  # local IP
+  localIP=($(ip -4 a | awk '/inet / && !/127.0.0.1/ { split($2, a, "/"); print a[1] }'))
+  log Info "local IP: ${localIP[*]}"
+  # local DNS
+  localDNS=($(dumpsys connectivity | awk -F'[ ,]' '/DnsAddresses:/ { for (i=1; i<=NF; i++) if ($i ~ /^\/.*$/) print substr($i, 2) }' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'))
+  log Info "local DNS: ${localDNS[*]}"
 
   # Save the process ID to the pid file
   if [ -n "$PID" ]; then
@@ -594,11 +632,11 @@ box_bin_status() {
 
 start_box() {
   # Clear the log file and add the timestamp and delimiter
-  # cd /data/adb/box/bin; chmod 755 *
+  # cd /data/adb/boxroot/bin; chmod 755 *
   sed -Ei "s/^description=(\[.*][[:space:]]*)?/description=[ $current_time | 😵‍💫 Module is working! but no service is running ] /g" "$PROPFILE"
 
   echo -n "" > "${box_log}"
-  box_version=$(busybox awk '!/^ *#/ && /version=/ { print $0 }' "/data/adb/modules/box_for_root/module.prop" 2>/dev/null)
+  box_version=$(busybox awk '!/^ *#/ && /version=/ { print $0 }' "/data/adb/modules/box_root/module.prop" 2>/dev/null)
 
   if [ -t 1 ]; then
     echo -e "${yellow}$(getprop persist.sys.timezone) $(date)${normal}"
