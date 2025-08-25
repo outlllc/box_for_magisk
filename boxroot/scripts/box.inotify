@@ -1,4 +1,9 @@
 #!/system/bin/sh
+# Validate settings.ini
+if ! sh -n /data/adb/boxroot/settings.ini 2>"/data/adb/boxroot/run/settings_err.log"; then
+  echo "err: settings.ini contains a syntax error" | tee -a "/data/adb/boxroot/run/settings_err.log"
+  exit 1
+fi
 
 scripts_dir="${0%/*}"
 service_path="${scripts_dir}/box.service"
@@ -15,11 +20,11 @@ monitor_file="$3"
 service_control() {
   if [ "${monitor_file}" = "disable" ]; then
     if [ "${events}" = "d" ]; then
-      "${service_path}" start > "${run_path}/service.log" 2>&1 &&
-      "${iptables_path}" enable >> "${run_path}/service.log" 2>&1
+      "${service_path}" start > "${run_path}/inotify.log" 2>&1 &&
+      "${iptables_path}" enable >> "${run_path}/inotify.log" 2>&1
     elif [ "${events}" = "n" ]; then
-      "${iptables_path}" disable >> "${run_path}/service.log" 2>&1 &&
-      "${service_path}" stop >> "${run_path}/service.log" 2>&1
+      "${iptables_path}" disable >> "${run_path}/inotify.log" 2>&1 &&
+      "${service_path}" stop >> "${run_path}/inotify.log" 2>&1
     fi
   fi
 }

@@ -1,33 +1,47 @@
 #!/system/bin/sh
+# Validate settings.ini
+if ! sh -n /data/adb/boxroot/settings.ini 2>"/data/adb/boxroot/run/settings_err.log"; then
+  echo "err: settings.ini contains a syntax error" | tee -a "/data/adb/boxroot/run/settings_err.log"
+  exit 1
+fi
 
 scripts_dir="${0%/*}"
 source /data/adb/boxroot/settings.ini
 
 PROPFILE="/data/adb/modules/box_root/module.prop"
+log_backup="false"
 
 box_check_logs() {
-  # Delete logs for each bin in the list
-  log Info "deleting and backup logs"
-  for bin in "${bin_list[@]}"; do
-    if [ -f "${box_run}/${bin}.log" ]; then
-      mv "${box_run}/${bin}.log" "${box_run}/${bin}.old.log"
+    ts=$(date '+%Y-%m-%d_%H-%M-%S')
+    log Info "Cleaning and backing up logs"
+
+    # Backup logs for each bin in bin_list
+    if [ "${log_backup}" = "true" ]; then
+      for bin in "${bin_name}"; do
+          log_file="${box_run}/${bin}.log"
+          if [ -f "${log_file}" ]; then
+              mv "${log_file}" "${box_run}/${bin}_$ts.log.bak"
+              log Info "Backup: ${bin}.log → ${bin}_${ts}.log.bak"
+          fi
+      done
     fi
-  done
-  # Delete other log files
-  find "${box_run}" -maxdepth 1 -type f \( -name "root" -o -name "*.list" -o -name "*.inotify.log" \) -exec rm -f {} +
-  # Delete logs that are three days old or older
-  find "${box_run}" -maxdepth 1 -type f -name "*.log" -mtime +3 -exec rm -f {} +
+
+    # Remove specific unnecessary files
+    find "${box_run}" -maxdepth 1 -type f \( -name "root" -o -name "*.list" -o -name "*.inotify.log" \) -exec rm -f {} +
+
+    # Remove old logs (>1 days)
+    find "${box_run}" -maxdepth 1 -type f \( -name "*.log" -o -name "*.bak" \) -mtime +1 -exec rm -f {} +
 }
 
 box_bin_alive() {
   local PID=$(<"${box_pid}" 2>/dev/null)
-  if ! kill -0 "$PID" 2>/dev/null; then
+  if ! kill -0 "$PID" >/dev/null; then
     log Error "$(<"${box_run}/${bin_name}.log")"
     log Error "${bin_name} service is not running."
     log Error "please check ${bin_name}.log for more information."
     log Error "killing stale pid $PID"
     for bin in "${bin_list[@]}"; do
-      killall -15 "${bin}" >/dev/null 2>&1 || busybox pkill -15 "${bin}" >/dev/null 2>&1 
+      killall -15 "${bin}" >/dev/null || busybox pkill -15 "${bin}" >/dev/null 2>&1 
     done
     "${scripts_dir}/box.iptables" disable >/dev/null 2>&1
     [ -f "${box_pid}" ] && rm -f "${box_pid}"
@@ -38,25 +52,32 @@ box_bin_alive() {
 }
 
 box_run_crontab() {
-  # start crond with the "-c" option and keep it in the background
-  nohup busybox crond -c "${box_run}" > /dev/null 2>&1 &
-  # delete the previous crontab and create a new crontab
+  # Stop crond if it is running (optional)
+  pkill -f "busybox crond" >/dev/null 2>&1
+  # Prepare crontab
   busybox crontab -c "${box_run}" -r
-  touch "${box_run}/root"
-  chmod 0755 "${box_run}/root"
+  echo "# cron tasks for root" > "${box_run}/root"
 
   if [ "${run_crontab}" = "true" ]; then
-    log Debug "crontab job enabled"
+    log Debug "crond enable"
     if [ "$update_subscription" = "true" ] || [ "$update_geo" = "true" ]; then
-      log Debug "Interval crontab: ${interva_update}."
-      echo "${interva_update} ${scripts_dir}/box.tool geosub" >> "${box_run}/root"
-      log Info "${bin_name} geox updates: ${update_geo}."
-      if [ "${bin_name}" = "clash" ]; then
-        log Info "${bin_name} subscription update: ${update_subscription}."
+      if [ -n "${interva_update}" ]; then
+        log Debug "Crontab interval: ${interva_update}."
+        echo "${interva_update} ${scripts_dir}/box.tool geosub" >> "${box_run}/root"
+        log Info "${bin_name} geox updates: ${update_geo}."
+        if [ "${bin_name}" = "clash" ]; then
+          log Info "${bin_name} subscription update: ${update_subscription}."
+        fi
+      else
+        log Debug "Crontab interval is empty, skipping Geox & Subscription schedule setup."
       fi
     fi
+    cat "${box_dir}/crontab.cfg" >> "${box_run}/root"
+    chmod 0644 "${box_run}/root"
+    # start crond with the "-c" option and keep it in the background
+    nohup busybox crond -c "${box_run}" >/dev/null 2>&1 &
   else
-    log Info "crontab Job disabled"
+    log Info "crond disable"
   fi
 }
 
@@ -205,6 +226,7 @@ prepare_singbox() {
           "auto_route": true,
           "strict_route": true,
           "auto_redirect": true,
+          "include_android_user": [0,10,999],
           "platform": {
             "http_proxy": {
               "enabled": true,
@@ -267,7 +289,10 @@ prepare_singbox() {
     "${yq}" '(.inbounds[] | select(.type == "tun") | .include_package) = []' -i --output-format=json "${sing_config}"
     "${yq}" '(.inbounds[] | select(.type == "tun") | .exclude_package) = []' -i --output-format=json "${sing_config}"
     [[ ${proxy_mode} = "blacklist" || ${proxy_mode} = "black" ]] && mode="exclude" || mode="include"
-    for package in "${packages_list[@]}"; do
+
+    # Clean up the "0:" prefix and insert one by one into the config
+    for raw in "${packages_list[@]}"; do
+      package=$(echo "$raw" | cut -d':' -f2)
       "${yq}" eval '(.inbounds[] | select(.type == "tun") | .'${mode}'_package) += ["'${package}'"]' -i --output-format=json "${sing_config}"
     done
 
@@ -351,7 +376,7 @@ prepare_clash() {
         '  strict-route: true' \
         '  auto-redirect: true' \
         '  auto-detect-interface: true' \
-        '  include-android-user: [0, 10]' \
+        '  include-android-user: [0, 10, 999]' \
         '  exclude-package: []' \
         '  include-package: []' \ >> "${clash_config}"
       log Debug "[tun] configuration has been added to ${clash_config}"
@@ -378,9 +403,12 @@ prepare_clash() {
     sed -i "s/exclude-package:.*/exclude-package: []/g" "${clash_config}"
     sed -i "s/include-package:.*/include-package: []/g" "${clash_config}"
 
-    # Add packages to the configuration if list_package is not empty
     if [ -n "${list_package}" ]; then
-      sed -i "s/${mode}-package:.*/${mode}-package: [\"${list_package//,/\",\"}\"]/g" "${clash_config}"
+      list_package_clean=$(echo "$list_package" | sed 's/999://g' | sed 's/10://g' | sed 's/0://g' | busybox paste -sd, -)
+
+      # list_package_clean=$(echo "$list_package" | sed 's/999://g' | sed 's/10://g' | sed 's/0://g' | tr '\n' ',' | sed 's/,$//')
+
+      sed -i "s/${mode}-package:.*/${mode}-package: [\"${list_package_clean//,/\",\"}\"]/g" "${clash_config}"
     fi
 
     sed -i "/tun:/,/enable:/ { /enable: false/ s/enable: false/enable: true/ }" "${clash_config}"
@@ -400,12 +428,17 @@ prepare_clash() {
   fi
 
   if [[ "${network_mode}" == @(mixed|tproxy|redirect|enhance) ]]; then
-    if [[ -n "${packages_list[*]}" || -n "${gid_list[*]}" ]] && [ "${clash_enhanced_mode}" = "fake-ip" ]; then
-      log Warning "${proxy_mode} only works in enhanced-mode: redir-host xclash[mihomo]"
-      log Warning "auto replace fake-ip to redir-host"
+    if [[ -n "${packages_list[*]}" || -n "${ignore_out_list[*]}" || -n "${gid_list[*]}" ]] && [ "${clash_enhanced_mode}" = "fake-ip" ]; then
+      log Warning "${proxy_mode} Only works in enhanced-mode: redir-host xclash[mihomo]"
+      log Warning "replace fake-ip to redir-host in clash config"
       sed -i "s/enhanced-mode:.*/enhanced-mode: redir-host/g" "${clash_config}"
+      sed -i "/sniffer:/,/enable:/ { /enable: false/ s/enable: false/enable: true/ }" "${clash_config}"
     fi
   fi
+}
+
+prop_description() {
+  sed -Ei "s/^description=(\[.*][[:space:]]*)?/description=[ $current_time | ⚠️ Your $bin_name configuration has an error, check the log for more details ] /g" "$PROPFILE"
 }
 
 box_run_bin() {
@@ -417,39 +450,63 @@ box_run_bin() {
   case "${bin_name}" in
     hysteria)
       # sync port
-      sed -i -e "/tcpTProxy:/,/listen:/s/listen: :.*/listen: :${tproxy_port}/" "${box_dir}/${bin_name}/config.yaml"
-      sed -i -e "/udpTProxy:/,/listen:/s/listen: :.*/listen: :${tproxy_port}/" "${box_dir}/${bin_name}/config.yaml"
-
-      # set network_mode variable value to "tproxy"
-      if [[ "${network_mode}" != "tproxy" ]]; then
-        sed -i 's/\(network_mode=\)\"[^\"]*\"/\1"tproxy"/g' ${settings}
+      if [ -f "${hysteria_config}" ]; then
+        sed -i -e "/tcpTProxy:/,/listen:/s/listen: :.*/listen: :${tproxy_port}/" "${hysteria_config}"
+        sed -i -e "/udpTProxy:/,/listen:/s/listen: :.*/listen: :${tproxy_port}/" "${hysteria_config}"
+        sed -i -e "/tcpRedirect:/,/listen:/s/listen: :.*/listen: :${redir_port}/" "${hysteria_config}"
       fi
-      nohup busybox setuidgid ${box_user_group} ${bin_path} -c ${box_dir}/${bin_name}/config.yaml > "${bin_log}" 2>&1 &
+
+      case "${network_mode}" in
+        redirect|tproxy|enhance)
+          # do nothing
+          ;;
+        *)
+          sed -i 's/\(network_mode=\)\"[^\"]*\"/\1"tproxy"/g' ${settings}
+          ;;
+      esac
+
+      nohup busybox setuidgid "${box_user_group}" "${bin_path}" -c "${hysteria_config}" > "${bin_log}" 2>&1 &
       PID=$!
-      echo -n $PID > "${box_pid}"
+
       sleep 1
+
+      # Cek apakah proses benar-benar berjalan
+      if kill -0 "${PID}" 2>/dev/null; then
+        echo -n "${PID}" > "${box_pid}"
+      else
+        prop_description
+        log Error "$(cat "${box_run}/${bin_name}.log")"
+        log Error "Configuration failed. Please check the log file: ${box_run}/${bin_name}.log"
+        exit 1
+      fi
       ;;
     sing-box)
-      prepare_singbox
-      if ${bin_path} check -D "${box_dir}/${bin_name}" > "${box_run}/${bin_name}.log" 2>&1; then
-        nohup busybox setuidgid "${box_user_group}" "${bin_path}" run -D "${box_dir}/${bin_name}" > "${bin_log}" 2>&1 &
+      if [ "${auto_modify_config}" = "true" ]; then
+        prepare_singbox
+      fi
+      if ${bin_path} check -D "${box_dir}/${bin_name}" -c "${sing_config}" > "${box_run}/${bin_name}.log" 2>&1; then
+        nohup busybox setuidgid "${box_user_group}" "${bin_path}" run -D "${box_dir}/${bin_name}" -c "${sing_config}" > "${bin_log}" 2>&1 &
         PID=$!
         echo -n $PID > "${box_pid}"
         sleep 1
       else
+        prop_description
         log Error "$(<"${box_run}/${bin_name}.log")"
         log Error "configuration failed. Please check the ${box_run}/${bin_name}.log file."
         exit 1
       fi
       ;;
     clash)
-      prepare_clash
+      if [ "${auto_modify_config}" = "true" ]; then
+        prepare_clash
+      fi
       if ${bin_path} -t -d "${box_dir}/${bin_name}" -f "${clash_config}" > "${box_run}/${bin_name}.log" 2>&1; then
         nohup busybox setuidgid "${box_user_group}" "${bin_path}" -d "${box_dir}/${bin_name}" -f "${clash_config}" > "${bin_log}" 2>&1 &
         PID=$!
         echo -n $PID > "${box_pid}"
         sleep 1
       else
+        prop_description
         log Error "$(<"${box_run}/${bin_name}.log")"
         log Error "configuration failed. Please check the ${box_run}/${bin_name}.log file."
         exit 1
@@ -461,21 +518,18 @@ box_run_bin() {
         sed -i 's/\(network_mode=\)\"[^\"]*\"/\1"tproxy"/g' ${settings}
       fi
 
-      # sync port
-      ${box_dir}/bin/yq '(.inbounds[] | select(.protocol == "dokodemo-door") | .port) = '"${tproxy_port}"'' -i --output-format=yaml "${box_dir}/${bin_name}/config.yaml" >/dev/null 2>&1
-
-      ${box_dir}/bin/yq '(.inbounds[] | select(.protocol == "dokodemo-door") | select(.tag == "tproxy-in") | .port) = '"${tproxy_port}" -i --output-format=json "${box_dir}/${bin_name}/config.json" >/dev/null 2>&1
-
       # check configuration file
-      if [ ! -f "${box_dir}/${bin_name}/config.toml" ] && [ ! -f "${box_dir}/${bin_name}/config.json" ] && [ ! -f "${box_dir}/${bin_name}/config.yaml" ]; then
-        log Error "No configuration file found in ${box_dir}/${bin_name}/. Expected one of: config.toml, config.json, or config.yaml"
-        if [ -f "${box_pid}" ]; then
-          rm -f "${box_pid}"
-          log Info "PID file removed: ${box_pid}"
-        fi
+      if [ ! -f "${xray_config}" ]; then
+        log Error "No configuration file found in ${xray_config}"
         exit 1
       else
-        log Info "Configuration file located in ${box_dir}/${bin_name}/ (one of: .toml, .json, or .yaml)"
+        # sync port
+        if [[ "${xray_config}" == *.yaml ]]; then
+          ${box_dir}/bin/yq '(.inbounds[] | select(.protocol == "dokodemo-door") | .port) = '"${tproxy_port}"'' -i --output-format=yaml "${xray_config}" >/dev/null 2>&1
+        elif [[ "${xray_config}" == *.json ]]; then
+          ${box_dir}/bin/yq '(.inbounds[] | select(.protocol == "dokodemo-door") | select(.tag == "tproxy-in") | .port) = '"${tproxy_port}" -i --output-format=json "${xray_config}" >/dev/null 2>&1
+        fi
+        log Info "Configuration file located in ${xray_config}"
       fi
 
       # run xray
@@ -486,6 +540,7 @@ box_run_bin() {
         echo -n $PID > "${box_pid}"
         sleep 1
       else
+        prop_description
         log Error "$(<"${box_run}/${bin_name}.log")"
         log Error "configuration failed. Please check the ${box_run}/${bin_name}.log file."
         exit 1
@@ -497,21 +552,18 @@ box_run_bin() {
         sed -i 's/\(network_mode=\)\"[^\"]*\"/\1"tproxy"/g' ${settings}
       fi
 
-      # sync port
-      ${box_dir}/bin/yq '(.inbounds[] | select(.protocol == "dokodemo-door") | .port) = '"${tproxy_port}"'' -i --output-format=yaml "${box_dir}/${bin_name}/config.yaml" >/dev/null 2>&1
-
-      ${box_dir}/bin/yq '(.inbounds[] | select(.protocol == "dokodemo-door") | select(.tag == "tproxy-in") | .port) = '"${tproxy_port}" -i --output-format=json "${box_dir}/${bin_name}/config.json" >/dev/null 2>&1
-
       # check configuration file
-      if [ ! -f "${box_dir}/${bin_name}/config.toml" ] && [ ! -f "${box_dir}/${bin_name}/config.json" ] && [ ! -f "${box_dir}/${bin_name}/config.yaml" ]; then
-        log Error "No configuration file found in ${box_dir}/${bin_name}/. Expected one of: config.toml, config.json, or config.yaml"
-        if [ -f "${box_pid}" ]; then
-          rm -f "${box_pid}"
-          log Info "PID file removed: ${box_pid}"
-        fi
+      if [ ! -f "${v2fly_config}" ]; then
+        log Error "No configuration file found in ${v2fly_config}"
         exit 1
       else
-        log Info "Configuration file located in ${box_dir}/${bin_name}/ (one of: .toml, .json, or .yaml)"
+        # sync port
+        if [[ "${v2fly_config}" == *.yaml ]]; then
+          ${box_dir}/bin/yq '(.inbounds[] | select(.protocol == "dokodemo-door") | .port) = '"${tproxy_port}"'' -i --output-format=yaml "${v2fly_config}" >/dev/null 2>&1
+        elif [[ "${v2fly_config}" == *.json ]]; then
+          ${box_dir}/bin/yq '(.inbounds[] | select(.protocol == "dokodemo-door") | select(.tag == "tproxy-in") | .port) = '"${tproxy_port}" -i --output-format=json "${v2fly_config}" >/dev/null 2>&1
+        fi
+        log Info "Configuration file located in ${v2fly_config}"
       fi
 
       # run v2ray
@@ -522,6 +574,7 @@ box_run_bin() {
         echo -n $PID > "${box_pid}"
         sleep 1
       else
+        prop_description
         log Error "$(<"${box_run}/${bin_name}.log")"
         log Error "configuration failed. Please check the ${box_run}/${bin_name}.log file."
         exit 1
@@ -565,7 +618,7 @@ box_bin_status() {
     return 1
   fi
 
-  stack=$(if [ "${bin_name}" != "clash" ]; then find "/data/adb/box/sing-box" -type f -name "*.json" -exec busybox awk -F'"' '/"stack"/{print $4}' {} +; else busybox awk '!/^ *#/ && /stack: / { print $2;found=1; exit}' "${clash_config}"; fi)
+  stack=$(if [ "${bin_name}" != "clash" ]; then find "/data/adb/boxroot/sing-box" -type f -name "*.json" -exec busybox awk -F'"' '/"stack"/{print $4}' {} +; else busybox awk '!/^ *#/ && /stack: / { print $2;found=1; exit}' "${clash_config}"; fi)
   TOAST=1 log Info "${bin_name} service is running."
 
   log Info "proxy: ${proxy_mode} + network: ${network_mode} + $(if [[ "${network_mode}" == @(mixed|tun) ]]; then echo "stack: ${stack}"; fi)"
@@ -588,19 +641,19 @@ box_bin_status() {
   log Info "${bin_name} memory usage: ${bin_rss}, swap: ${bin_swap}"
 
   # Get the CPU usage of the binary
-  cpu=$(ps -p $PID -o %cpu | busybox awk 'NR==2{print $1}' 2> /dev/null)
+  cpu=$(ps -p $PID -o %cpu | busybox awk 'NR==2{print $1}' 2>/dev/null)
 
   cpus_allowed=$(grep Cpus_allowed_list /proc/$PID/status | busybox awk '{ print $2" "$3 }')
-  cpuset=$(ps -p $PID -o cpu | busybox awk 'NR==2{print $1}' 2> /dev/null)
+  core=$(busybox awk '{print $39}' /proc/$PID/stat 2>/dev/null)
 
   if [ -n "${cpu}" ]; then
     log Info "${bin_name} CPU usage: ${cpu}%"
   else
     log Info "${bin_name} CPU usage: not available"
   fi
-  if [ -n "${cpuset}" ]; then
+  if [ -n "${cpus_allowed}" ]; then
     log Info "${bin_name} list of allowed CPUs : ${cpus_allowed}"
-    log Info "${bin_name} Which CPU running on : ${cpuset}"
+    log Info "${bin_name} process $PID last ran on CPU core: ${core}"
   else
     log Info "${bin_name} Which CPU running on : not available"
   fi
@@ -620,12 +673,12 @@ box_bin_status() {
   localIP=($(ip -4 a | awk '/inet / && !/127.0.0.1/ { split($2, a, "/"); print a[1] }'))
   log Info "local IP: ${localIP[*]}"
   # local DNS
-  localDNS=($(dumpsys connectivity | awk -F'[ ,]' '/DnsAddresses:/ { for (i=1; i<=NF; i++) if ($i ~ /^\/.*$/) print substr($i, 2) }' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'))
+  localDNS=($(dumpsys connectivity | awk -F'[ ,]' '/DnsAddresses:/ { for (i=1; i<=NF; i++) if ($i ~ /^\/.*$/) print substr($i, 2) }' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' | sort -u))
   log Info "local DNS: ${localDNS[*]}"
 
   # Save the process ID to the pid file
   if [ -n "$PID" ]; then
-    sed -Ei "s/^description=(\[.*][[:space:]]*)?/description=[ $current_time | 😎 $bin_name service is running!!! ] /g" "$PROPFILE"
+    sed -Ei "s/^description=(\[.*][[:space:]]*)?/description=[ $current_time | ⭕ $bin_name service is running!!! ] /g" "$PROPFILE"
     echo -n "$PID" > "${box_pid}"
   fi
 }
@@ -633,7 +686,7 @@ box_bin_status() {
 start_box() {
   # Clear the log file and add the timestamp and delimiter
   # cd /data/adb/boxroot/bin; chmod 755 *
-  sed -Ei "s/^description=(\[.*][[:space:]]*)?/description=[ $current_time | 😵‍💫 Module is working! but no service is running ] /g" "$PROPFILE"
+  sed -Ei "s/^description=(\[.*][[:space:]]*)?/description=[ $current_time | ⚠️ Module is working! but no service is running ] /g" "$PROPFILE"
 
   echo -n "" > "${box_log}"
   box_version=$(busybox awk '!/^ *#/ && /version=/ { print $0 }' "/data/adb/modules/box_root/module.prop" 2>/dev/null)
@@ -649,7 +702,7 @@ start_box() {
       echo "$(getprop gsm.sim.operator.alpha) $(getprop gsm.network.type)"
       echo "${box_version}($(getprop ro.product.cpu.abi))"
       echo "━━━━━━━━━━━━━━━━━━"
-    } | tee -a "${box_log}" > /dev/null 2>&1
+    } | tee -a "${box_log}" >/dev/null 2>&1
   fi
 
   # Update iptables if bin_name is still running
@@ -765,16 +818,16 @@ stop_box() {
     # Check if the binary is running using pgrep
     if busybox pgrep "${bin}" >/dev/null; then
       # Use `busybox pkill` to kill the binary with signal 15, otherwise use `killall`.
-      if busybox pkill -15 "${bin}" >/dev/null 2>&1; then
+      if busybox pkill -15 "${bin}" >/dev/null; then
         : # Do nothing if busybox pkill is successful
       else
-        killall -15 "${bin}" >/dev/null 2>&1 || kill -15 "$(busybox pidof "${bin}")" >/dev/null 2>&1
+        killall -15 "${bin}" >/dev/null || kill -15 "$(busybox pidof "${bin}")" >/dev/null 2>&1
       fi
     fi
   done
   # Check if the binary has stopped
   sleep 0.5
-  if ! busybox pidof "${bin_name}" >/dev/null 2>&1; then
+  if ! busybox pidof "${bin_name}" >/dev/null; then
     # Delete the `box.pid` file if it exists
     if [ -f "${box_pid}" ]; then
       rm -f "${box_pid}"
@@ -788,16 +841,18 @@ stop_box() {
     force_stop
   fi
 
-  sed -Ei "s/^description=(\[.*][[:space:]]*)?/description=[ $current_time | 🥶 $bin_name shutting down, service is stopped !!! ] /g" "$PROPFILE"
+  sed -Ei "s/^description=(\[.*][[:space:]]*)?/description=[ $current_time | ❌ $bin_name shutting down, service is stopped !!! ] /g" "$PROPFILE"
 }
 
 stop_cron() {
-  # Find cronjob PID using `pgrep`
+# Stop crond with pkill
+if ! busybox pkill -f "busybox crond" >/dev/null; then
+  # If pkill fails, find and kill the process
   cronkill=$(busybox pgrep -f "crond -c ${box_run}")
   for cron in ${cronkill[@]}; do
-    # kill cronjob
-    kill -15 "${cron}"
+    kill -15 "${cron}" >/dev/null 2>&1
   done
+fi
 }
 
 force_stop() {
@@ -808,15 +863,15 @@ force_stop() {
     if busybox pkill -9 "${bin}"; then
       : # Do nothing if busybox pkill is successful
     else
-      if command -v killall >/dev/null 2>&1; then
-        killall -9 "${bin}" >/dev/null 2>&1 || true
+      if command -v killall >/dev/null; then
+        killall -9 "${bin}" >/dev/null || true
       else
-        pkill -9 "${bin}" >/dev/null 2>&1 || true
+        pkill -9 "${bin}" >/dev/null || true
       fi
     fi
   done
   sleep 0.5
-  if ! busybox pidof "${bin_name}" >/dev/null 2>&1; then
+  if ! busybox pidof "${bin_name}" >/dev/null; then
     log Warning "done, YOU can sleep peacefully."
     rm -f "${box_pid}"
   fi
@@ -834,7 +889,7 @@ fi
 
 case "$1" in
   start)
-    stop_box >> /dev/null 2>&1
+    stop_box >/dev/null 2>&1
     start_box
     ;;
   stop)
@@ -846,7 +901,6 @@ case "$1" in
     start_box && "${scripts_dir}/box.iptables" renew
     ;;
   status)
-    # Check whether the service is running or not
     if busybox pidof "${bin_name}" >/dev/null; then
       case "${bin_name}" in
         clash) echo "${yellow}$("${bin_path}" -v)${normal}";;
@@ -866,8 +920,22 @@ case "$1" in
   kcron)
     stop_cron
     ;;
+  help|-h|--help|"")
+    echo "${yellow}Usage${normal}: ${green}$0${normal} {${yellow}start|stop|restart|status|cron|kcron${normal}}"
+    echo
+    echo "Commands:"
+    echo "  ${yellow}start${normal}    - Stop (if running) then start the service"
+    echo "  ${yellow}stop${normal}     - Stop the service"
+    echo "  ${yellow}restart${normal}  - Restart the service and refresh iptables rules"
+    echo "  ${yellow}status${normal}   - Show service status and version"
+    echo "  ${yellow}cron${normal}     - Enable and start scheduled tasks"
+    echo "  ${yellow}kcron${normal}    - Kill/disable scheduled tasks"
+    echo
+    echo "Example:"
+    echo "  $0 start"
+    ;;
   *)
-    echo "${red}$0 $1 no found${normal}"
-    echo "${yellow}usage${normal}: ${green}$0${normal} {${yellow}start|stop|restart|status|cron|kcron${normal}}"
+    echo "${red}$0 $1 not found${normal}"
+    echo "Run '${green}$0 help${normal}' for usage."
     ;;
 esac
