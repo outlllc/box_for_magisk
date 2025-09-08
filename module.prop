@@ -1,6 +1,6 @@
 id=box_root
 name=Box for Magisk/KernelSU
-version=v1.10.2
+version=1.10.2
 versionCode=20250908
 author=taamarin.t.me
 description=MODDIR=/data/adb/boxroot;Modifications to achieve coexistence with the original
