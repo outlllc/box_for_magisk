@@ -1,7 +1,7 @@
 #!/system/bin/sh
 # Validate settings.ini
-if ! sh -n /data/adb/boxroot/settings.ini 2>"/data/adb/boxroot/run/settings_err.log"; then
-  echo "err: settings.ini contains a syntax error" | tee -a "/data/adb/boxroot/run/settings_err.log"
+if ! /system/bin/sh -n /data/adb/boxroot/settings.ini 2>"/data/adb/boxroot/run/settings_err.log"; then
+  echo "Err: settings.ini contains a syntax error" | tee -a "/data/adb/boxroot/run/settings_err.log"
   exit 1
 fi
 
@@ -423,16 +423,20 @@ prepare_clash() {
   clash_enhanced_mode=$(busybox awk '!/^ *#/ && /enhanced-mode: / { print $2 }' "${clash_config}" 2>/dev/null)
   if [ -z "${clash_enhanced_mode}" ]; then
     # Add enhanced-mode: fake-ip
-    sed -i '/dns:/ {n; /enable:.*/ {a\  enhanced-mode: fake-ip}}' "$clash_config"
+    sed -i "/^dns:/a \  enhanced-mode: fake-ip" "$clash_config"
     log Debug "enhanced-mode: fake-ip add success"
   fi
 
   if [[ "${network_mode}" == @(mixed|tproxy|redirect|enhance) ]]; then
-    if [[ -n "${packages_list[*]}" || -n "${ignore_out_list[*]}" || -n "${gid_list[*]}" ]] && [ "${clash_enhanced_mode}" = "fake-ip" ]; then
-      log Warning "${proxy_mode} Only works in enhanced-mode: redir-host xclash[mihomo]"
-      log Warning "replace fake-ip to redir-host in clash config"
-      sed -i "s/enhanced-mode:.*/enhanced-mode: redir-host/g" "${clash_config}"
-      sed -i "/sniffer:/,/enable:/ { /enable: false/ s/enable: false/enable: true/ }" "${clash_config}"
+    if [ "${mihomo_always_fakeip}" = "false" ]; then
+      if [[ -n "${packages_list[*]}" || -n "${ignore_out_list[*]}" || -n "${gid_list[*]}" ]] && [ "${clash_enhanced_mode}" = "fake-ip" ]; then
+        log Warning "${proxy_mode} Only works in enhanced-mode: redir-host xclash[mihomo]"
+        log Warning "replace fake-ip to redir-host in clash config"
+        sed -i "s/enhanced-mode:.*/enhanced-mode: redir-host/g" "${clash_config}"
+        sed -i "/sniffer:/,/enable:/ { /enable: false/ s/enable: false/enable: true/ }" "${clash_config}"
+      fi
+    else
+      log Warning "mihomo always use fake-ip enhance-mode, ignore blacklist or whitelist mode"
     fi
   fi
 }

@@ -1,7 +1,7 @@
 id=box_root
 name=Box for Magisk/KernelSU
-version=v1.10.1
-versionCode=20250825
-author=taamarin.t.me
+version=v1.10.2
+versionCode=20250908
+author=outlllc,taamarin
 description=MODDIR=/data/adb/boxroot;Modifications to achieve coexistence with the original
 updateJson=https://github.com/outlllc/box_for_magisk/raw/master/update.json
