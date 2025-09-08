@@ -1,7 +1,7 @@
 #!/system/bin/sh
 # Validate settings.ini
-if ! sh -n /data/adb/boxroot/settings.ini 2>"/data/adb/boxroot/run/settings_err.log"; then
-  echo "err: settings.ini contains a syntax error" | tee -a "/data/adb/boxroot/run/settings_err.log"
+if ! /system/bin/sh -n /data/adb/boxroot/settings.ini 2>"/data/adb/boxroot/run/settings_err.log"; then
+  echo "Err: settings.ini contains a syntax error" | tee -a "/data/adb/boxroot/run/settings_err.log"
   exit 1
 fi
 
@@ -41,6 +41,7 @@ upfile() {
     request+=" -L"
     request+=" --insecure"
     request+=" --user-agent ${user_agent}"
+    request+=" --connect-timeout 30 --max-time 180"
     request+=" -o ${file}"
     request+=" ${update_url}"
     echo "${yellow}${request}${normal}"
@@ -56,7 +57,8 @@ upfile() {
     if [ -f "${file_bak}" ]; then
       mv "${file_bak}" "${file}" || true
     fi
-    log Error "Download ${request} ${orange}failed${normal}"
+    request_url=$(echo "${request}" | sed -E 's/(token=[^&]{6})[^&]*/\1*****/')
+    log Error "Download ${request_url} failed"
     return 1
   }
   return 0
@@ -414,7 +416,9 @@ upsubs() {
               update_file_name="${update_file_name}.subscription"
             fi
 
-            log Debug "Downloading ${sub_url} → ${update_file_name}"
+            # token_url="${sub_url:0:25}*****"
+            token_url=$(echo "$sub_url" | sed -E 's/(token=[^&]{6})[^&]*/\1*****/')
+            log Debug "Downloading ${token_url} → ${update_file_name}"
             if upfile "${update_file_name}" "${sub_url}"; then
               log Info "${update_file_name} saved"
 
@@ -463,7 +467,7 @@ upsubs() {
                 exit 1
               fi
             else
-              log Error "update $bin_name subscription failed → ${sub_url}"
+              log Error "update $bin_name subscription failed → ${token_url}"
               return 1
             fi
           done

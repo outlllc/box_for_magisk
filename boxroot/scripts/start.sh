@@ -1,7 +1,7 @@
 #!/system/bin/sh
 # Validate settings.ini
-if ! sh -n /data/adb/boxroot/settings.ini 2>"/data/adb/boxroot/run/settings_err.log"; then
-  echo "err: settings.ini contains a syntax error" | tee -a "/data/adb/boxroot/run/settings_err.log"
+if ! /system/bin/sh -n /data/adb/boxroot/settings.ini 2>"/data/adb/boxroot/run/settings_err.log"; then
+  echo "Err: settings.ini contains a syntax error" | tee -a "/data/adb/boxroot/run/settings_err.log"
   exit 1
 fi
 

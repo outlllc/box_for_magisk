@@ -1,7 +1,7 @@
 #!/system/bin/sh
 # Validate settings.ini
-if ! sh -n /data/adb/boxroot/settings.ini 2>"/data/adb/boxroot/run/settings_err.log"; then
-  echo "err: settings.ini contains a syntax error" | tee -a "/data/adb/boxroot/run/settings_err.log"
+if ! /system/bin/sh -n /data/adb/boxroot/settings.ini 2>"/data/adb/boxroot/run/settings_err.log"; then
+  echo "Err: settings.ini contains a syntax error" | tee -a "/data/adb/boxroot/run/settings_err.log"
   exit 1
 fi
 
@@ -423,7 +423,7 @@ prepare_clash() {
   clash_enhanced_mode=$(busybox awk '!/^ *#/ && /enhanced-mode: / { print $2 }' "${clash_config}" 2>/dev/null)
   if [ -z "${clash_enhanced_mode}" ]; then
     # Add enhanced-mode: fake-ip
-    sed -i '/dns:/ {n; /enable:.*/ {a\  enhanced-mode: fake-ip}}' "$clash_config"
+    sed -i "/^dns:/a \  enhanced-mode: fake-ip" "$clash_config"
     log Debug "enhanced-mode: fake-ip add success"
   fi
 
