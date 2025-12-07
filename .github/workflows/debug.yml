@@ -37,10 +37,10 @@ jobs:
           sudo mkdir -p /box_for_root
           sudo cp -r --parents $(find ./ -type f ! -path './.git/*' ! -name 'CHANGELOG.md' ! -name 'update.json' ! -name 'build.sh' ! -path './.github/*' ! -path './docs/*')  /box_for_root/
 
-      - name: Upload Debug Asset => (box_for_magisk_${{ steps.get_version.outputs.version }})
+      - name: Upload Debug Asset => (box_for_root_${{ steps.get_version.outputs.version }})
         uses: actions/upload-artifact@v4
         with:
-          name: "box_for_magisk_${{ steps.get_version.outputs.version }}"
+          name: "box_for_root_${{ steps.get_version.outputs.version }}"
           path: /box_for_root/
 
   upload:

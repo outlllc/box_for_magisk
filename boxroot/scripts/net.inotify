@@ -4,7 +4,7 @@ events=$1
 # monitor_dir=$2
 # monitor_file=$3
 
-[ "$events" = "w" ] && [ -f "/data/adb/box/run/box.pid" ] || exit 0
+[ "$events" = "w" ] && [ -f "/data/adb/boxroot/run/box.pid" ] || exit 0
 
 export PATH="/data/adb/magisk:/data/adb/ksu/bin:/data/adb/ap/bin:$PATH:/system/bin"
 
@@ -22,7 +22,7 @@ fi
 
 iptables="${IPV}"
 ip6tables="${IP6V}"
-logs="/data/adb/box/run"
+logs="/data/adb/boxroot/run"
 
 rules_add() {
   date > "${logs}/net.log"

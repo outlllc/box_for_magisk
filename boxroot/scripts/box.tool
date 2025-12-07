@@ -1,15 +1,15 @@
 #!/system/bin/sh
 # Validate settings.ini
-if ! /system/bin/sh -n /data/adb/box/settings.ini 2>"/data/adb/box/run/settings_err.log"; then
-  echo "Err: settings.ini contains a syntax error" | tee -a "/data/adb/box/run/settings_err.log"
+if ! /system/bin/sh -n /data/adb/boxroot/settings.ini 2>"/data/adb/boxroot/run/settings_err.log"; then
+  echo "Err: settings.ini contains a syntax error" | tee -a "/data/adb/boxroot/run/settings_err.log"
   exit 1
 fi
 
 scripts_dir="${0%/*}"
-source /data/adb/box/settings.ini
+source /data/adb/boxroot/settings.ini
 
 # user agent
-user_agent="box_for_root"
+user_agent="box_root"
 # whether use ghproxy to accelerate github download
 url_ghproxy="https://ghfast.top"
 use_ghproxy="false"
@@ -36,7 +36,7 @@ upfile() {
   fi
   # request
   if which curl >/dev/null; then
-    # curl="$(which curl || echo /data/adb/box/bin/curl)"
+    # curl="$(which curl || echo /data/adb/boxroot/bin/curl)"
     request="curl --progress-bar"
     request+=" -L"
     request+=" --insecure"
@@ -86,7 +86,7 @@ restart_box() {
 
 # Check Configuration
 check() {
-  # su -c /data/adb/box/scripts/box.tool rconf
+  # su -c /data/adb/boxroot/scripts/box.tool rconf
   log Info "Checking configuration for <${bin_name}>..."
 
   case "${bin_name}" in
@@ -313,7 +313,7 @@ upyq() {
 
 # Check and update geoip and geosite
 upgeox() {
-  # su -c /data/adb/box/scripts/box.tool geox
+  # su -c /data/adb/boxroot/scripts/box.tool geox
   geodata_mode=$(busybox awk '!/^ *#/ && /geodata-mode:*./{print $2}' "${clash_config}")
   [ -z "${geodata_mode}" ] && geodata_mode=false
 
@@ -522,7 +522,7 @@ upsubs() {
 }
 
 upkernel() {
-  # su -c /data/adb/box/scripts/box.tool upkernel
+  # su -c /data/adb/boxroot/scripts/box.tool upkernel
   mkdir -p "${bin_dir}/backup"
   if [ -f "${bin_dir}/${bin_name}" ]; then
     cp "${bin_dir}/${bin_name}" "${bin_dir}/backup/${bin_name}.bak" >/dev/null 2>&1
@@ -785,7 +785,7 @@ xkernel() {
       
           if [ -f "${box_pid}" ]; then
             log Info "Removing cache.db for clean restart..."
-            rm -rf /data/adb/box/sing-box/cache.db
+            rm -rf /data/adb/boxroot/sing-box/cache.db
       
             log Info "Restarting ${bin_name}..."
             restart_box
@@ -866,7 +866,7 @@ xkernel() {
 
 # Check and update yacd
 upxui() {
-  # su -c /data/adb/box/scripts/box.tool upxui
+  # su -c /data/adb/boxroot/scripts/box.tool upxui
   xdashboard="${bin_name}/dashboard"
   if [[ "${bin_name}" == @(clash|sing-box) ]]; then
     file_dashboard="${box_dir}/${xdashboard}.zip"
@@ -1083,11 +1083,11 @@ cgroup_cpuset() {
   return 0
 }
 
-ip_port=$(if [ "${bin_name}" = "clash" ]; then busybox awk '/external-controller:/ {print $2}' "${clash_config}"; else find /data/adb/box/sing-box/ -type f -name 'config.json' -exec busybox awk -F'[:,]' '/external_controller/ {print $2":"$3}' {} \; | sed 's/^[ \t]*//;s/"//g'; fi;)
+ip_port=$(if [ "${bin_name}" = "clash" ]; then busybox awk '/external-controller:/ {print $2}' "${clash_config}"; else find /data/adb/boxroot/sing-box/ -type f -name 'config.json' -exec busybox awk -F'[:,]' '/external_controller/ {print $2":"$3}' {} \; | sed 's/^[ \t]*//;s/"//g'; fi;)
 secret=""
 
 webroot() {
-path_webroot="/data/adb/modules/box_for_root/webroot/index.html"
+path_webroot="/data/adb/modules/box_root/webroot/index.html"
 touch -n > $path_webroot
   if [[ "${bin_name}" = @(clash|sing-box) ]]; then
     echo -e '

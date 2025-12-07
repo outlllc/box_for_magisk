@@ -1,13 +1,13 @@
 #!/system/bin/sh
 # Validate settings.ini
-if ! /system/bin/sh -n /data/adb/box/settings.ini 2>"/data/adb/box/run/settings_err.log"; then
-  echo "Err: settings.ini contains a syntax error" | tee -a "/data/adb/box/run/settings_err.log"
+if ! /system/bin/sh -n /data/adb/boxroot/settings.ini 2>"/data/adb/boxroot/run/settings_err.log"; then
+  echo "Err: settings.ini contains a syntax error" | tee -a "/data/adb/boxroot/run/settings_err.log"
   exit 1
 fi
 
 scripts_dir="${0%/*}"
-file_settings="/data/adb/box/settings.ini"
-moddir="/data/adb/modules/box_for_root"
+file_settings="/data/adb/boxroot/settings.ini"
+moddir="/data/adb/modules/box_root"
 
 # busybox Magisk/KSU/Apatch
 busybox="/data/adb/magisk/busybox"
@@ -21,15 +21,15 @@ wait_for_data_ready() {
 }
 
 refresh_box() {
-  if [ -f "/data/adb/box/run/box.pid" ]; then
-    "${scripts_dir}/box.service" stop >> "/dev/null" 2>&1
-    "${scripts_dir}/box.iptables" disable >> "/dev/null" 2>&1
+  if [ -f "/data/adb/boxroot/run/box.pid" ]; then
+    "${scripts_dir}/box.service" stop > "/dev/null" 2>&1
+    "${scripts_dir}/box.iptables" disable > "/dev/null" 2>&1
   fi
 }
 
 start_service() {
   if [ ! -f "${moddir}/disable" ]; then
-    "${scripts_dir}/box.service" start >> "/dev/null" 2>&1
+    "${scripts_dir}/box.service" start > "/dev/null" 2>&1
   fi
 }
 
@@ -43,7 +43,7 @@ enable_iptables() {
   done
 
   if [ -n "$PID" ]; then
-    "${scripts_dir}/box.iptables" enable >> "/dev/null" 2>&1
+    "${scripts_dir}/box.iptables" enable > "/dev/null" 2>&1
   fi
 }
 
@@ -81,10 +81,10 @@ start_inotifyd() {
   net_inotifyd
 }
 
-mkdir -p /data/adb/box/run/
-if [ -f "/data/adb/box/manual" ]; then
-  if [ -f "/data/adb/box/run/box.pid" ]; then
-      rm -rf /data/adb/box/run/box.pid
+mkdir -p /data/adb/boxroot/run/
+if [ -f "/data/adb/boxroot/manual" ]; then
+  if [ -f "/data/adb/boxroot/run/box.pid" ]; then
+      rm -rf /data/adb/boxroot/run/box.pid
   fi
   net_inotifyd
   exit 1

@@ -1,14 +1,14 @@
 #!/system/bin/sh
 # Validate settings.ini
-if ! /system/bin/sh -n /data/adb/box/settings.ini 2>"/data/adb/box/run/settings_err.log"; then
-  echo "Err: settings.ini contains a syntax error" | tee -a "/data/adb/box/run/settings_err.log"
+if ! /system/bin/sh -n /data/adb/boxroot/settings.ini 2>"/data/adb/boxroot/run/settings_err.log"; then
+  echo "Err: settings.ini contains a syntax error" | tee -a "/data/adb/boxroot/run/settings_err.log"
   exit 1
 fi
 
 scripts_dir="${0%/*}"
-source /data/adb/box/settings.ini
+source /data/adb/boxroot/settings.ini
 
-PROPFILE="/data/adb/modules/box_for_root/module.prop"
+PROPFILE="/data/adb/modules/box_root/module.prop"
 log_backup="false"
 
 box_check_logs() {
@@ -128,7 +128,7 @@ box_permission() {
     fi
     log Error "Kernel [ ${bin_name} ] is missing."
     log Error "Please download the [ ${bin_name} ] kernel and place it in the ${bin_dir}/ directory."
-    log Debug "exec 'su -c /data/adb/box/scripts/box.tool upkernel' in terminal"
+    log Debug "exec 'su -c /data/adb/boxroot/scripts/box.tool upkernel' in terminal"
     exit 1
   fi
 }
@@ -195,10 +195,25 @@ prepare_singbox() {
   ${yq} '(.inbounds[] | select(.type == "tun") | .auto_route) |= true' -i --output-format=json "${sing_config}"
 
   # Format sing-box configuration
-  if ${bin_path} format -w -D "${box_dir}/${bin_name}" -C "${box_dir}/${bin_name}" > "${box_run}/${bin_name}.log" 2>&1; then
-    # Set auto_route based on network_mode
+##  if ${bin_path} format -w -D "${box_dir}/${bin_name}" -C "${box_dir}/${bin_name}" > "${box_run}/${bin_name}.log" 2>&1; then
+  ##do not format the config
+  if [ -f "${sing_config}" ]; then
+    log Info "______no format______"  
+	# Set auto_route based on network_mode
     if [[ "${network_mode}" == @(mixed|tun) ]]; then
       # Check if "type" is "tun" in configuration
+      
+      if ! busybox grep -q '"type": "mixed"' "${sing_config}"; then
+        # Add "mixed" configuration if missing
+        ${yq} '.inbounds += [{
+          "type": "mixed",
+          "tag": "mixed",
+          "listen": "::",
+          "listen_port": 7890,
+          "set_system_proxy": false
+        }]' -i --output-format=json "${sing_config}"
+        log Debug "[mixed] configuration added to ${sing_config}"
+      fi
       if ! busybox grep -q '"type": "tun"' "${sing_config}"; then
         # Add "tun" configuration if missing
         ${yq} '.inbounds += [{
@@ -212,6 +227,13 @@ prepare_singbox() {
           "strict_route": true,
           "auto_redirect": true,
           "include_android_user": [0,10,999],
+          "platform": {
+            "http_proxy": {
+              "enabled": true,
+              "server": "127.0.0.1",
+              "server_port": 7890
+            }
+          },
           "include_package": [],
           "exclude_package": []
         }]' -i --output-format=json "${sing_config}"
@@ -224,14 +246,31 @@ prepare_singbox() {
       sed -i 's/"auto_detect_interface": true/"auto_detect_interface": false/g' "${box_dir}/sing-box/"*.json
 
       # Check if "type" is "tproxy" in configuration
-      if ! busybox grep -q '"type": "tproxy"' "${sing_config}"; then
+      if ! busybox grep -q '"type": "tproxy"' "${sing_config}"; then     
+        if ! busybox grep -q '"type": "mixed"' "${sing_config}"; then
+          ${yq} '.inbounds += [{
+            "type": "mixed",
+            "tag": "mixed",
+            listen": "::",
+            "listen_port": 7890,
+            "set_system_proxy": false
+          }]' -i --output-format=json "${sing_config}"
+          log Debug "[mixed] configuration added to ${sing_config}"
+        fi
         # Add "tproxy" configuration if missing
         ${yq} '.inbounds += [{
           "type": "tproxy",
           "tag": "tproxy-in",
           "listen": "::",
           "listen_port": '"${tproxy_port}"'
-        }]' -i --output-format=json "${sing_config}"
+        },
+		{
+          "type": "mixed",
+          "tag": "mixed",
+          "listen": "::",
+          "listen_port": 7080,
+          "set_system_proxy": false
+    }]' -i --output-format=json "${sing_config}"
         log Debug "[Tproxy] configuration added to ${sing_config}"
       fi
 
@@ -389,11 +428,15 @@ prepare_clash() {
   fi
 
   if [[ "${network_mode}" == @(mixed|tproxy|redirect|enhance) ]]; then
-    if [[ -n "${packages_list[*]}" || -n "${ignore_out_list[*]}" || -n "${gid_list[*]}" ]] && [ "${clash_enhanced_mode}" = "fake-ip" ]; then
-      log Warning "${proxy_mode} Only works in enhanced-mode: redir-host xclash[mihomo]"
-      log Warning "replace fake-ip to redir-host in clash config"
-      sed -i "s/enhanced-mode:.*/enhanced-mode: redir-host/g" "${clash_config}"
-      sed -i "/sniffer:/,/enable:/ { /enable: false/ s/enable: false/enable: true/ }" "${clash_config}"
+    if [ "${mihomo_always_fakeip}" = "false" ]; then
+      if [[ -n "${packages_list[*]}" || -n "${ignore_out_list[*]}" || -n "${gid_list[*]}" ]] && [ "${clash_enhanced_mode}" = "fake-ip" ]; then
+        log Warning "${proxy_mode} Only works in enhanced-mode: redir-host xclash[mihomo]"
+        log Warning "replace fake-ip to redir-host in clash config"
+        sed -i "s/enhanced-mode:.*/enhanced-mode: redir-host/g" "${clash_config}"
+        sed -i "/sniffer:/,/enable:/ { /enable: false/ s/enable: false/enable: true/ }" "${clash_config}"
+      fi
+    else
+      log Warning "mihomo always use fake-ip enhance-mode, ignore blacklist or whitelist mode"
     fi
   fi
 }
@@ -442,7 +485,9 @@ box_run_bin() {
       fi
       ;;
     sing-box)
-      prepare_singbox
+      if [ "${auto_modify_config}" = "true" ]; then
+        prepare_singbox
+      fi
       if ${bin_path} check -D "${box_dir}/${bin_name}" -c "${sing_config}" > "${box_run}/${bin_name}.log" 2>&1; then
         nohup busybox setuidgid "${box_user_group}" "${bin_path}" run -D "${box_dir}/${bin_name}" -c "${sing_config}" > "${bin_log}" 2>&1 &
         PID=$!
@@ -456,7 +501,9 @@ box_run_bin() {
       fi
       ;;
     clash)
-      prepare_clash
+      if [ "${auto_modify_config}" = "true" ]; then
+        prepare_clash
+      fi
       if ${bin_path} -t -d "${box_dir}/${bin_name}" -f "${clash_config}" > "${box_run}/${bin_name}.log" 2>&1; then
         nohup busybox setuidgid "${box_user_group}" "${bin_path}" -d "${box_dir}/${bin_name}" -f "${clash_config}" > "${bin_log}" 2>&1 &
         PID=$!
@@ -575,7 +622,7 @@ box_bin_status() {
     return 1
   fi
 
-  stack=$(if [ "${bin_name}" != "clash" ]; then find "/data/adb/box/sing-box" -type f -name "*.json" -exec busybox awk -F'"' '/"stack"/{print $4}' {} +; else busybox awk '!/^ *#/ && /stack: / { print $2;found=1; exit}' "${clash_config}"; fi)
+  stack=$(if [ "${bin_name}" != "clash" ]; then find "/data/adb/boxroot/sing-box" -type f -name "*.json" -exec busybox awk -F'"' '/"stack"/{print $4}' {} +; else busybox awk '!/^ *#/ && /stack: / { print $2;found=1; exit}' "${clash_config}"; fi)
   TOAST=1 log Info "${bin_name} service is running."
 
   log Info "proxy: ${proxy_mode} + network: ${network_mode} + $(if [[ "${network_mode}" == @(mixed|tun) ]]; then echo "stack: ${stack}"; fi)"
@@ -642,11 +689,11 @@ box_bin_status() {
 
 start_box() {
   # Clear the log file and add the timestamp and delimiter
-  # cd /data/adb/box/bin; chmod 755 *
+  # cd /data/adb/boxroot/bin; chmod 755 *
   sed -Ei "s/^description=(\[.*][[:space:]]*)?/description=[ $current_time | ⚠️ Module is working! but no service is running ] /g" "$PROPFILE"
 
   echo -n "" > "${box_log}"
-  box_version=$(busybox awk '!/^ *#/ && /version=/ { print $0 }' "/data/adb/modules/box_for_root/module.prop" 2>/dev/null)
+  box_version=$(busybox awk '!/^ *#/ && /version=/ { print $0 }' "/data/adb/modules/box_root/module.prop" 2>/dev/null)
 
   if [ -t 1 ]; then
     echo -e "${yellow}$(getprop persist.sys.timezone) $(date)${normal}"

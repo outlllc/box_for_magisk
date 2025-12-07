@@ -1,14 +1,14 @@
 #!/system/bin/sh
 # Validate settings.ini
-if ! /system/bin/sh -n /data/adb/box/settings.ini 2>"/data/adb/box/run/settings_err.log"; then
-  echo "Err: settings.ini contains a syntax error" | tee -a "/data/adb/box/run/settings_err.log"
+if ! /system/bin/sh -n /data/adb/boxroot/settings.ini 2>"/data/adb/boxroot/run/settings_err.log"; then
+  echo "Err: settings.ini contains a syntax error" | tee -a "/data/adb/boxroot/run/settings_err.log"
   exit 1
 fi
 
 export PATH="/data/adb/magisk:/data/adb/ksu/bin:/data/adb/ap/bin:$PATH:/data/data/com.termux/files/usr/bin"
 
-module_dir="/data/adb/modules/box_for_root"
-base_dir="/data/adb/box"
+module_dir="/data/adb/modules/box_root"
+base_dir="/data/adb/boxroot"
 variab_dir="${base_dir}/run/variab"
 log_file="${base_dir}/run/netswitch.log"
 log_file_path="/data/local/tmp/"
@@ -117,7 +117,6 @@ check_module_service() {
         log_msg "SSID: ${ssid}, IP: ${current_ip}"
         echo "ssid:${ssid}" > "$last_wifi_state_file"
         echo "ip:${current_ip}" >> "$last_wifi_state_file"
-
         if [ "$use_module_on_wifi" = "false" ]; then
           log_msg "Policy: Disable service when on WiFi"
           if [ "$current_state" != "disabled" ]; then

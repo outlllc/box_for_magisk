@@ -1,7 +1,7 @@
 #!/system/bin/sh
 
 # Definisi variabel
-box_dir="/data/adb/box"
+box_dir="/data/adb/boxroot"
 box_run="${box_dir}/run"
 box_pid="${box_run}/box.pid"
 

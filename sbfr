@@ -39,19 +39,19 @@ post_ui() {
 case "$1" in
     start)
         echo -e "${YELLOW}Starting Box...${RESET}"
-        su -c '/data/adb/box/scripts/box.service start'
-        su -c '/data/adb/box/scripts/box.iptables enable'
+        su -c '/data/adb/boxroot/scripts/box.service start'
+        su -c '/data/adb/boxroot/scripts/box.iptables enable'
         ;;
     stop)
         echo -e "${YELLOW}Stopping Box...${RESET}"
-        su -c '/data/adb/box/scripts/box.iptables disable'
-        su -c '/data/adb/box/scripts/box.service stop'
+        su -c '/data/adb/boxroot/scripts/box.iptables disable'
+        su -c '/data/adb/boxroot/scripts/box.service stop'
         ;;
     s)
-        su -c "/data/adb/box/scripts/box.service ${2}"
+        su -c "/data/adb/boxroot/scripts/box.service ${2}"
         ;;
     i)
-        su -c "/data/adb/box/scripts/box.iptables ${2}"
+        su -c "/data/adb/boxroot/scripts/box.iptables ${2}"
         ;;
     u)
         post_ui "/upgrade"
@@ -63,7 +63,7 @@ case "$1" in
         post_ui "/restart"
         ;;
     t)
-        su -c "/data/adb/box/scripts/box.tool $2"
+        su -c "/data/adb/boxroot/scripts/box.tool $2"
         ;;
     help|-h|--help)
         help

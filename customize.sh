@@ -40,40 +40,40 @@ fi
 # Extract files and configure directories
 ui_print "— Installing Box for Magisk/KernelSU/APatch"
 unzip -o "$ZIPFILE" -x 'META-INF/*' -x 'webroot/*' -d "$MODPATH" >&2
-if [ -d "/data/adb/box" ]; then
+if [ -d "/data/adb/boxroot" ]; then
   ui_print "— Backup existing box data"
-  temp_bak=$(mktemp -d "/data/adb/box/box.XXXXXXXXXX")
+  temp_bak=$(mktemp -d "/data/adb/boxroot/box.XXXXXXXXXX")
   temp_dir="${temp_bak}"
-  mv /data/adb/box/* "${temp_dir}/"
-  mv "$MODPATH/box/"* /data/adb/box/
+  mv /data/adb/boxroot/* "${temp_dir}/"
+  mv "$MODPATH/boxroot/"* /data/adb/boxroot/
   backup_box="true"
 else
-  mv "$MODPATH/box" /data/adb/
+  mv "$MODPATH/boxroot" /data/adb/
 fi
 
 # Directory creation and file extraction
 ui_print "— Create directories..."
-mkdir -p /data/adb/box/ /data/adb/box/run/ /data/adb/box/bin/xclash/
+mkdir -p /data/adb/boxroot/ /data/adb/boxroot/run/ /data/adb/boxroot/bin/xclash/
 mkdir -p $MODPATH/system/bin
 
 ui_print "— Extracting..."
 ui_print "     ↳  uninstall.sh → $MODPATH"
-ui_print "     ↳  box_service.sh → ${service_dir}"
+ui_print "     ↳  box_root_service.sh → ${service_dir}"
 ui_print "     ↳  sbfr → $MODPATH/system/bin"
 unzip -j -o "$ZIPFILE" 'uninstall.sh' -d "$MODPATH" >&2
-unzip -j -o "$ZIPFILE" 'box_service.sh' -d "${service_dir}" >&2
+unzip -j -o "$ZIPFILE" 'box_root_service.sh' -d "${service_dir}" >&2
 unzip -j -o "$ZIPFILE" 'sbfr' -d "$MODPATH/system/bin" >&2
 
 # Set permissions
 ui_print "— Setting permissions..."
 set_perm_recursive $MODPATH 0 0 0755 0644
-set_perm_recursive /data/adb/box/ 0 3005 0755 0644
-set_perm_recursive /data/adb/box/scripts/ 0 3005 0755 0700
-set_perm ${service_dir}/box_service.sh 0 0 0755
+set_perm_recursive /data/adb/boxroot/ 0 3005 0755 0644
+set_perm_recursive /data/adb/boxroot/scripts/ 0 3005 0755 0700
+set_perm ${service_dir}/box_root_service.sh 0 0 0755
 set_perm $MODPATH/uninstall.sh 0 0 0755
 set_perm $MODPATH/system/bin/sbfr 0 0 0755
 
-chmod ugo+x ${service_dir}/box_service.sh $MODPATH/uninstall.sh /data/adb/box/scripts/*
+chmod ugo+x ${service_dir}/box_root_service.sh $MODPATH/uninstall.sh /data/adb/boxroot/scripts/*
 
 apply_mirror() {
   ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -88,26 +88,49 @@ apply_mirror() {
     if [ $(( NOW_TIME - START_TIME )) -gt 9 ]; then
       ui_print "— No input detected after 10 seconds..."
       ui_print "— ghfast acceleration enabled."
-      sed -i 's/use_ghproxy=.*/use_ghproxy="true"/' /data/adb/box/scripts/box.tool
+      sed -i 's/use_ghproxy=.*/use_ghproxy="true"/' /data/adb/boxroot/scripts/box.tool
       break
     elif $(cat $TMPDIR/events | grep -q KEY_VOLUMEUP); then
       ui_print "— ghfast acceleration enabled."
-      sed -i 's/use_ghproxy=.*/use_ghproxy="true"/' /data/adb/box/scripts/box.tool
+      sed -i 's/use_ghproxy=.*/use_ghproxy="true"/' /data/adb/boxroot/scripts/box.tool
       break
     elif $(cat $TMPDIR/events | grep -q KEY_VOLUMEDOWN); then
       ui_print "— ghfast acceleration disabled."
-      sed -i 's/use_ghproxy=.*/use_ghproxy="false"/' /data/adb/box/scripts/box.tool
+      sed -i 's/use_ghproxy=.*/use_ghproxy="false"/' /data/adb/boxroot/scripts/box.tool
       break
     fi
   done
 }
 
-apply_mirror
 timeout 1 getevent -cl >/dev/null
 
 find_bin() {
   bin_dir="$temp_bak"
 
+  ui_print "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+  ui_print "— Do you want to run binary checking and update process?"
+  ui_print "— [ Vol UP(+): Yes, continue ]"
+  ui_print "— [ Vol DOWN(-): No, skip all ]"
+
+  START_TIME=$(date +%s)
+  while true; do
+    NOW_TIME=$(date +%s)
+    timeout 1 getevent -lc 1 2>&1 | grep KEY_VOLUME > "$TMPDIR/events"
+
+    if [ $(( NOW_TIME - START_TIME )) -gt 9 ]; then
+      ui_print "— No input detected in 10 seconds, skipping everything..."
+      return  # ⬅ Skip all
+    elif grep -q KEY_VOLUMEUP "$TMPDIR/events"; then
+      ui_print "— Continuing..."
+      break   # ⬅ Continue find_bin()
+    elif grep -q KEY_VOLUMEDOWN "$TMPDIR/events"; then
+      ui_print "— Skipping all update checks."
+      return  # ⬅ Skip all
+    fi
+  done
+
+  apply_mirror
+  
   check_bin() {
     local name="$1"
     local path="$bin_dir/bin/$name"
@@ -138,14 +161,14 @@ find_bin() {
       ui_print "— No input detected after 10 seconds..."
       if [ "$bin" = "clash" ]; then
         ui_print "— Download enabled for clash."
-        /data/adb/box/scripts/box.tool $action
+        /data/adb/boxroot/scripts/box.tool $action
       else
         ui_print "— Download disabled for $bin."
       fi
       break
     elif grep -q KEY_VOLUMEUP "$TMPDIR/events"; then
       ui_print "— Download enabled."
-      /data/adb/box/scripts/box.tool $action
+      /data/adb/boxroot/scripts/box.tool $action
       break
     elif grep -q KEY_VOLUMEDOWN "$TMPDIR/events"; then
       ui_print "— Download disabled."
@@ -189,7 +212,7 @@ timeout 1 getevent -cl >/dev/null
 
 restore_ini() {
   backup_ini="$temp_dir/settings.ini"
-  target_ini="/data/adb/box/settings.ini"
+  target_ini="/data/adb/boxroot/settings.ini"
   
   # List of keys to restore (separate with spaces)
   keys="network_mode bin_name ipv6 xclash_option renew update_subscription subscription_url_clash subscription_url_singbox name_clash_config clash_config name_provide_clash_config clash_provide_path enable_network_service_control use_module_on_wifi_disconnect use_module_on_wifi use_ssid_matching use_wifi_list_mode wifi_ssids_list inotify_log_enabled"
@@ -250,7 +273,7 @@ if [ "${backup_box}" = "true" ]; then
   ui_print "     ↳  v2fly"
   restore_config() {
     config_dir="$1"
-    [ -d "${temp_dir}/${config_dir}" ] && cp -rf "${temp_dir}/${config_dir}/"* "/data/adb/box/${config_dir}/"
+    [ -d "${temp_dir}/${config_dir}" ] && cp -rf "${temp_dir}/${config_dir}/"* "/data/adb/boxroot/${config_dir}/"
   }
   for dir in clash xray v2fly sing-box hysteria; do
     restore_config "$dir"
@@ -258,9 +281,9 @@ if [ "${backup_box}" = "true" ]; then
 
   restore_kernel() {
     kernel_name="$1"
-    if [ ! -f "/data/adb/box/bin/$kernel_name" ] && [ -f "${temp_dir}/bin/${kernel_name}" ]; then
+    if [ ! -f "/data/adb/boxroot/bin/$kernel_name" ] && [ -f "${temp_dir}/bin/${kernel_name}" ]; then
       ui_print "— Restoring kernel ${kernel_name}..."
-      cp -rf "${temp_dir}/bin/${kernel_name}" "/data/adb/box/bin/${kernel_name}"
+      cp -rf "${temp_dir}/bin/${kernel_name}" "/data/adb/boxroot/bin/${kernel_name}"
     fi
   }
 
@@ -272,15 +295,15 @@ if [ "${backup_box}" = "true" ]; then
   ui_print "     ↳  *.logs"
   ui_print "     ↳  box.pid"
   ui_print "     ↳  uid.list"
-  cp -rf "${temp_dir}/run/"* "/data/adb/box/run/"
+  cp -rf "${temp_dir}/run/"* "/data/adb/boxroot/run/"
 
   ui_print "— Restoring..."
   ui_print "     ↳  ap.list.cfg"
   ui_print "     ↳  crontab.cfg"
   ui_print "     ↳  package.list.cfg"
-  cp -rf "${temp_dir}/ap.list.cfg" "/data/adb/box/ap.list.cfg"
-  cp -rf "${temp_dir}/crontab.cfg" "/data/adb/box/crontab.cfg"
-  cp -rf "${temp_dir}/package.list.cfg" "/data/adb/box/package.list.cfg"
+  cp -rf "${temp_dir}/ap.list.cfg" "/data/adb/boxroot/ap.list.cfg"
+  cp -rf "${temp_dir}/crontab.cfg" "/data/adb/boxroot/crontab.cfg"
+  cp -rf "${temp_dir}/package.list.cfg" "/data/adb/boxroot/package.list.cfg"
 fi
 
 # create_resolv() {
@@ -300,21 +323,21 @@ fi
 # create_resolv
 
 # Update module description if no kernel binaries are found
-[ -z "$(find /data/adb/box/bin -type f)" ] && sed -Ei 's/^description=(\[.*][[:space:]]*)?/description=[ 😱 Module installed but manual Kernel download required ] /g' $MODPATH/module.prop
+[ -z "$(find /data/adb/boxroot/bin -type f)" ] && sed -Ei 's/^description=(\[.*][[:space:]]*)?/description=[ 😱 Module installed but manual Kernel download required ] /g' $MODPATH/module.prop
 
 # Customize module name based on environment
 if [ "$KSU" = "true" ]; then
-  sed -i "s/name=.*/name=Box for KernelSU/g" $MODPATH/module.prop
+  sed -i "s/name=.*/name=Box for Root/g" $MODPATH/module.prop
 elif [ "$APATCH" = "true" ]; then
-  sed -i "s/name=.*/name=Box for APatch/g" $MODPATH/module.prop
+  sed -i "s/name=.*/name=Box for Root/g" $MODPATH/module.prop
 else
-  sed -i "s/name=.*/name=Box for Magisk/g" $MODPATH/module.prop
+  sed -i "s/name=.*/name=Box for Root/g" $MODPATH/module.prop
 fi
 unzip -o "$ZIPFILE" 'webroot/*' -d "$MODPATH" >&2
 
 # Clean up temporary files
 ui_print "— Cleaning up leftover files"
-rm -rf /data/adb/box/bin/.bin $MODPATH/box $MODPATH/sbfr $MODPATH/box_service.sh
+rm -rf /data/adb/boxroot/bin/.bin $MODPATH/boxroot $MODPATH/sbfr $MODPATH/box_root_service.sh
 
 ui_print ""
 # Create a symbolic link to run /dev/sbfr as a shortcut to sbfr
