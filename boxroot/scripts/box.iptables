@@ -658,6 +658,20 @@ cleanup_iptables() {
   done
 }
 
+print_flag() {
+    local name="$1"
+    local value="$2"
+
+    if [ "$value" = "1" ]; then
+        log Info "$name=1 ($name 已开启)"
+    elif [ "$value" = "0" ]; then
+        log Info "$name=0 ($name 已关闭)"
+    else
+        log Info "$name=$value"
+    fi
+}
+
+
 if [[ "${network_mode}" == @(redirect|mixed|tproxy|enhance) ]]; then
   case "$1" in
     enable|renew)
@@ -678,27 +692,69 @@ if [[ "${network_mode}" == @(redirect|mixed|tproxy|enhance) ]]; then
           log Info "Creating iptables transparent proxy rules."
 
           iptables="$IPV"
-          if start_tproxy; then
-            log Info "Creating iptables transparent proxy rules done."
-          else
-            log Error "Creating iptables transparent proxy rules failed."
-            stop_tproxy >/dev/null 2>&1
-          fi
-
-          if [ "${ipv6}" = "true" ]; then
-            log Debug "Using IPv6."
-            ipv6_enable
-            iptables="$IP6V"
-
+          if [ ${use_tproxy_sh} != "true" ]; then  
             if start_tproxy; then
-              log Info "Creating ip6tables transparent proxy rules done."
+              log Info "Creating iptables transparent proxy rules done."
             else
-              log Error "Creating ip6tables transparent proxy rules failed."
+              log Error "Creating iptables transparent proxy rules failed."
               stop_tproxy >/dev/null 2>&1
             fi
+
+            if [ "${ipv6}" = "true" ]; then
+              log Debug "Using IPv6."
+              ipv6_enable
+              iptables="$IP6V"
+
+              if start_tproxy; then
+                log Info "Creating ip6tables transparent proxy rules done."
+              else
+                log Error "Creating ip6tables transparent proxy rules failed."
+                stop_tproxy >/dev/null 2>&1
+              fi
+            else
+              disable_ipv6
+              log Warning "Disabling IPv6."
+            fi
           else
-            disable_ipv6
-            log Warning "Disabling IPv6."
+            if PROXY_HOTSPOT=${PROXY_HOTSPOT} \
+                PROXY_USB=${PROXY_USB} \
+                PROXY_IPV6=${PROXY_IPV6} \
+                PROXY_TCP_PORT=${PROXY_TCP_PORT} \
+                PROXY_UDP_PORT=${PROXY_UDP_PORT} \
+                PROXY_MODE=${PROXY_MODE} \
+                DNS_HIJACK_ENABLE=${DNS_HIJACK_ENABLE} \
+                PROXY_MOBILE=${PROXY_MOBILE} \
+                PROXY_WIFI=${PROXY_WIFI} \
+                PROXY_TCP=${PROXY_TCP} \
+                PROXY_UDP=${PROXY_UDP} \
+                BYPASS_CN_IP=${BYPASS_CN_IP} \
+                DRY_RUN=${DRY_RUN} \
+                APP_PROXY_ENABLE=${APP_PROXY_ENABLE} \
+                PROXY_APPS_LIST="${PROXY_APPS_LIST}" \
+                BYPASS_APPS_LIST="${BYPASS_APPS_LIST}" \
+                APP_PROXY_MODE=${APP_PROXY_MODE} \
+                /data/adb/boxroot/scripts/tproxy.sh start; then
+              log Info "Started tproxy.sh via /data/adb/boxroot/scripts/tproxy.sh with parameters:"
+                  print_flag PROXY_HOTSPOT "$PROXY_HOTSPOT"
+                  print_flag PROXY_USB "$PROXY_USB"
+                  print_flag PROXY_IPV6 "$PROXY_IPV6"
+                  print_flag PROXY_MOBILE "$PROXY_MOBILE"
+                  print_flag PROXY_WIFI "$PROXY_WIFI"
+                  print_flag PROXY_TCP "$PROXY_TCP"
+                  print_flag PROXY_UDP "$PROXY_UDP"
+                  print_flag APP_PROXY_ENABLE "$APP_PROXY_ENABLE"
+                  print_flag BYPASS_CN_IP "$BYPASS_CN_IP"
+                  print_flag DRY_RUN "$DRY_RUN"
+
+                  log Info "PROXY_TCP_PORT=$PROXY_TCP_PORT"
+                  log Info "PROXY_UDP_PORT=$PROXY_UDP_PORT"
+                  log Info "PROXY_APPS_LIST=$PROXY_APPS_LIST"
+                  log Info "BYPASS_APPS_LIST=$BYPASS_APPS_LIST"
+                  log Info "APP_PROXY_MODE=$APP_PROXY_MODE"
+            else
+              log Error "Failed to start tproxy.sh via /data/adb/boxroot/scripts/tproxy.sh"
+              /data/adb/boxroot/scripts/tproxy.sh stop >/dev/null 2>&1
+            fi
           fi
         ;;
         redirect)
@@ -800,7 +856,16 @@ if [[ "${network_mode}" == @(redirect|mixed|tproxy|enhance) ]]; then
       probe_user_group || log Error "Failed to check BOX user group. Please ensure ${bin_name} kernel is started."
       log Warning "Cleaning up iptables transparent proxy rules."
 
-      cleanup_iptables
+      if [ ${use_tproxy_sh} != "true" ]; then  
+        cleanup_iptables
+      else
+        # use external script; check return value
+        if /data/adb/boxroot/scripts/tproxy.sh stop; then
+          log Info "Stopped tproxy.sh via /data/adb/boxroot/scripts/tproxy.sh"
+        else
+          log Error "Failed to stop tproxy.sh via /data/adb/boxroot/scripts/tproxy.sh"
+        fi
+      fi
 
       log Warning "Cleaning up iptables transparent proxy rules done."
       ;;
